@@ -1,0 +1,509 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>K線PC版本3.0</title>
+<meta name="keywords" content="K線">
+<meta name="description" content="本頁只可以查看當天的K線，不用于交易測試,加入鼠标左右监控">
+<link href="kcss.css" rel="stylesheet" type="text/css">
+<script type="text/javascript" src="main.js?dfsdf"></script>
+</head>
+
+<body onLoad="getdata()">
+<div id="main">
+  <div id="k_menu">
+    <ul>
+      <li><span class="s1 current">日线</span></li>
+      <li><span class="s1" onClick="test();">周线</span></li>
+      <li><span class="s1">月线</span></li>
+      <li><span class="s1">资金线</span></li>
+    </ul>
+  </div>
+  <div id="box">
+    <canvas id="chart1"/>
+    您的瀏覽器不支持canvas！
+    </canvas>
+    <canvas id="chart2"/>
+    </canvas>
+  </div>
+  <div id="k_bottom">
+    <ul>
+      <li><span class="s1 current" onClick="checkzb('ma');">MA</span></li>
+      <li><span class="s1" onClick="checkzb('kdj');">KDJ</span></li>
+      <li><span class="s1" onClick="checkzb('cdp');">CDP</span></li>
+      <li><span class="s1" onClick="checkzb('tbp');">TBP</span></li>
+    </ul>
+  </div>
+</div>
+<script type="text/javascript">
+var canvas = document.getElementById('chart1');
+var ctx = canvas.getContext("2d")
+
+var arr; //初始化数据
+var ks = 10; //显示多少根线
+var endid  = 0; //显示最长的ID号
+var startid = endid - ks;
+var ex; //x刻度比例
+var ey; //y刻度比例
+var height,low,vol; //显示区的最高长宽高
+var ma,cdp,tbp,kdj;
+var vars = {}; //预定义
+
+//获取数据
+function getdata(){
+   //1.创建ajax对象
+	if(window.XMLHttpRequest){	var oAjax = new XMLHttpRequest();}else{	var oAjax = new ActiveXObject("Microsoft.XMLHTTP");	}
+	//2.连接服务器
+	oAjax.open("GET","/admin.php/Kdata/index/title/zsh600015/dates/20150102/'+new Date().getTime()",true);
+	//3.发送请求
+	oAjax.send();
+	//4.接收返回
+	oAjax.onreadystatechange=function()	{
+		if(oAjax.readyState==4)
+		{
+			if(oAjax.status==200)//判断是否成功,如果是200，就代表成功
+			{
+				arr=eval(oAjax.responseText);    //得到数据
+				//console.log(arr);
+				//设置默认
+				endid = arr.length;
+				if(endid>100){
+					ks = 100;
+				}else{
+					ks =endid;
+				}
+				startid = endid - ks;
+				vars['ma']=true;
+				vars['kdj']=true;
+				
+				stock();
+				drawK();				//绘制K线
+				
+				//alert(ss.length)
+			}else{
+				alert("没有得到数据，连接失败！");
+			}
+		}
+	};	   
+}
+
+
+function test(){
+	
+}
+
+/*
+绘制坐标系统
+*/
+function drawxyz(){
+	var cw = canvas.width;
+	var ch = canvas.height;
+	//绘制大的框
+	ctx.strokeStyle = '#000';
+	ctx.lineWidth = 1; 
+	ctx.beginPath(); 
+	ctx.moveTo(0,0); 
+	ctx.lineTo(cw,0); //这个是右边留空100像素
+	ctx.lineTo(cw,ch); 
+	ctx.lineTo(0,ch); 
+	ctx.lineTo(0,0); 
+	ctx.stroke(); 
+	
+	ctx.strokeStyle = '#000';
+	ctx.lineWidth = 1; 
+	ctx.beginPath(); 
+	//K线以上的
+	ctx.moveTo(0,ch*2/3); 
+	ctx.lineTo(cw-100,ch*2/3); 
+	//成交量分割
+	ctx.moveTo(0,ch*2/3+20); 
+	ctx.lineTo(cw-100,ch*2/3+20); 
+	//指标分割线
+	ctx.moveTo(0,ch*5/6); 
+	ctx.lineTo(cw-100,ch*5/6); 
+	//竖线
+	ctx.moveTo(cw-100,0); 
+	ctx.lineTo(cw-100,ch); 
+	ctx.stroke(); 
+
+	//以下绘制价格刻度
+	var jishu=(height-low)/9;
+	for(i=0;i<10;i++){
+		//刻度数字
+		ctx.save();
+		ctx.beginPath();
+		ctx.fillStyle = 'black';
+		ctx.textAlign='left';
+		if(i==0){
+			ctx.textBaseline = 'bottom';
+		}else if(i==9){
+			ctx.textBaseline = 'top';
+		}else{
+			ctx.textBaseline = 'middle';
+		}
+		ctx.fillText((Math.round((low+jishu*i)*100)/10000).toFixed(2),(canvas.offsetWidth-90),(canvas.offsetHeight)*2/3-((canvas.offsetHeight*2/3)/9)*i); //（x,y,w,h）
+		ctx.save();
+		//绘制x背景线
+		ctx.beginPath(); // 开始路径绘制
+		ctx.translate(0.5,0.5); 
+		ctx.moveTo(0, (canvas.offsetHeight)*2/3-((canvas.offsetHeight*2/3)/9)*i);
+		ctx.lineTo((canvas.offsetWidth-100), (canvas.offsetHeight)*2/3-((canvas.offsetHeight*2/3)/9)*i);
+		ctx.strokeStyle = "rgba(0,0,0,.1)"; // 设置线的颜色
+		ctx.stroke();
+		ctx.restore();	
+	}
+	//底部日期坐标
+	var j=0;
+	for( var i=startid; i < endid; i++){
+		if(ks<56){
+			mods=8;
+		}else if(ks<112){
+			mods=18;
+		}else if(ks<224){
+			mods=38;
+		}
+		else{
+			mods=68;
+		}
+		if(i%mods==1||i==(endid-1)){
+			ctx.beginPath();
+			ctx.fillStyle = 'black';
+			ctx.textAlign='center';
+			ctx.fillText(arr[i]['h_dates'],(ex*j+ex/2),(canvas.offsetHeight*2/3)+3);
+			ctx.save();
+			//绘制y背景线
+			ctx.beginPath(); // 开始路径绘制
+			ctx.translate(0.5,0.5); 
+			ctx.moveTo((j*ex+ex/2), 0);
+			ctx.lineTo((j*ex+ex/2), (canvas.offsetHeight*2/3));
+			ctx.strokeStyle = "rgba(0,0,0,.1)"; // 设置线的颜色
+			ctx.stroke();
+			ctx.restore();	
+		}
+		j++;
+	} 
+	//document.title=height+':'+low;
+	//绘制坐标结束-------------------------------------------------------------
+}
+//设置参数
+function stock(){
+	//设置画布和css大小统一
+	canvas.height = canvas.offsetHeight;
+	canvas.width = canvas.offsetWidth;
+	
+	var arrt = [];// 创建当前K线最高最低价数组
+	var arrv = [];// 当前成交量最高量数组
+	
+	for(var i=startid;i<endid;i++)
+	{
+		if(vars['ma']==true){
+			arrt.push(arr[i]['h_height'],arr[i]['h_low'],arr[i]['ma_5'],arr[i]['ma_10'],arr[i]['ma_20'],arr[i]['ma_60'],arr[i]['tbp']);
+		}else if(vars['tbp']==true){
+			arrt.push(arr[i]['h_height'],arr[i]['h_low'],arr[i]['tbp']);
+		}else if(vars['cdp']==true){
+			arrt.push(arr[i]['h_height'],arr[i]['h_low'],arr[i]['cdp_ah'],arr[i]['cdp_al']);
+		}else{
+			arrt.push(arr[i]['h_height'],arr[i]['h_low'],arr[i]['tbp'],arr[i]['cdp_ah'],arr[i]['cdp_al']);
+		}
+		arrv.push(arr[i]['h_vol']);
+	}
+	height=Math.max.apply(null, arrt); //显示区最高价
+	low   =Math.min.apply(null, arrt); //显示区最低价
+	vol   =Math.max.apply(null, arrv); //最高成交量
+	
+	//分10格后每根K线占用的宽度 ｛10可以换成N｝	//参数比例	
+	ex =  (canvas.offsetWidth-100)/(endid-startid); //x刻度比例
+	ey =  (canvas.offsetHeight)/(height-low)*2/3; //y刻度比例
+	
+	drawxyz();                          //绘制坐标
+}
+/*
+绘制k线系统 count 是显示K线数量，endid是最后一个组的数量 startid到开始id
+*/
+function drawK(){
+	var j    = 0;
+	var color;
+	//开始循环绘制：K线，成交量
+	for(var i=startid;i<endid;i++)
+	{
+		//判断阴阳线
+		if(Math.abs(arr[i]['h_close'])<=Math.abs(arr[i]['h_open'])){
+			color="rgba(0,255,0,1)"; //绿色
+		}else{
+			color="rgba(255,0,0,1)"; //红色
+		}
+		//获取单根K线坐标参数
+		var kh=Math.abs(arr[i]['h_open']-arr[i]['h_close']); //開盤收盤 高度差--》矩形高
+		var ky=height-Math.max(arr[i]['h_open'],arr[i]['h_close']) //开盘收盘跟 最高区间的差--》得到y坐标 没有转化，要乘上比例
+		
+		y2=Math.abs(height-arr[i]['h_height']); //本身最高价，跟区间最高的差
+		y3=Math.abs(height-arr[i]['h_low']); //本身最低价，跟区间最高价的差
+		//判斷是不是十字星`
+		if(kh*ey<1){ rec=1; }else{ rec=kh*ey; }
+		//K柱狀体
+		ctx.fillStyle = color;
+		ctx.fillRect(j*ex+ex/6, ky*ey, ex*2/3, rec);     //（x,y,w,h）
+		//vol柱狀線 成交量相关
+		var jpx=(canvas.offsetHeight/6-20)/vol;
+		ctx.fillRect(j*ex+ex/6, (canvas.offsetHeight*4/6+20)+(vol-arr[i]['h_vol'])*jpx, ex*2/3, arr[i]['h_vol']*jpx);     //（x,y,w,h）
+
+		//影线
+		ctx.beginPath();
+		ctx.strokeStyle = color;  
+		ctx.moveTo(j*ex+ex/2, y2*ey);
+		ctx.lineTo(j*ex+ex/2, y3*ey);
+		ctx.stroke();
+		ctx.restore(); //
+		
+		j++; //
+	}
+	drawZ();
+	//console.log(vars)
+}
+/*
+绘制指标系统
+*/
+function drawZ(){
+	//均线-----------start ma-------------------
+	if(vars['ma']==true){
+		// 将数据换算为坐标
+		var points = [];
+		var k=0;
+		for( var i=startid; i < endid; i++){ 
+			var px = ex * k +ex/2;
+			var py = (height-arr[i]['ma_5'])*ey;
+			points.push({"x":px,"y":py});
+			k++;
+		} 
+		writeline(points,'#333333');
+		// 10
+		var points = [];
+		var k=0;
+		for( var i=startid; i < endid; i++){ 
+			var px = ex * k +ex/2; 
+			var py = (height-arr[i]['ma_10'])*ey;
+			points.push({"x":px,"y":py});
+			k++;
+		} 
+		writeline(points,'#999900');
+		// 20
+		var points = [];
+		var k=0;
+		for( var i=startid; i < endid; i++){ 
+			var px = ex * k +ex/2; 
+			var py = (height-arr[i]['ma_20'])*ey;
+			points.push({"x":px,"y":py});
+			k++;
+		} 
+		writeline(points,'#C71585');
+		// 60
+		var points = [];
+		var k=0;
+		for( var i=startid; i < endid; i++){ 
+			var px = ex * k +ex/2; 
+			var py = (height-arr[i]['ma_60'])*ey;
+			points.push({"x":px,"y":py});
+			k++;
+		} 
+		writeline(points,'#3366ff');
+	}
+	//均线END
+		//cdp
+	//-------------------------------------------------------------------start cdp
+	if(vars['cdp']==true){
+		// 将数据换算为坐标cdp 
+		var points = [];
+		var k=0;
+		for( var i=startid; i < endid; i++){ 
+			var px = ex * k +ex/2;
+			var py = (height-arr[i]['cdp'])*ey;
+			points.push({"x":px,"y":py});
+			k++;
+		}
+		writeline(points,'#333');
+		// 将数据换算为坐标AH---------------------------------------------------
+		var points = [];
+		var k=0;
+		for( var i=startid; i < endid; i++){ 
+			var px = ex * k +ex/2;
+			var py = (height-arr[i]['cdp_ah'])*ey;
+			points.push({"x":px,"y":py});
+			k++;
+		}
+		writeline(points,'#00ff00');
+		// 将数据换算为坐标NH---------------------------------------------------
+		var points = [];
+		var k=0;
+		for( var i=startid; i < endid; i++){ 
+			var px = ex * k +ex/2;
+			var py = (height-arr[i]['cdp_nh'])*ey;
+			points.push({"x":px,"y":py});
+			k++;
+		}
+		writeline(points,'#66CC00');
+		// 将数据换算为坐标NL---------------------------------------------------
+		var points = [];
+		var k=0;
+		for( var i=startid; i < endid; i++){ 
+			var px = ex * k +ex/2;
+			var py = (height-arr[i]['cdp_nl'])*ey;
+			points.push({"x":px,"y":py});
+			k++;
+		}
+		writeline(points,'#FF66FF');
+		// 将数据换算为坐标Al---------------------------------------------------
+		var points = [];
+		var k=0;
+		for( var i=startid; i < endid; i++){ 
+			var px = ex * k +ex/2;
+			var py = (height-arr[i]['cdp_al'])*ey;
+			points.push({"x":px,"y":py});
+			k++;
+		}
+		writeline(points,'#ff0000');
+	}
+	//-------------------------------end------------------------------------cdp
+	//-------------------------------tbp------------------------------------start
+	if(vars['tbp']==true){
+		var points = [];
+		var k=0;
+		for( var i=startid; i < endid; i++){ 
+			var px = ex * k +ex/2;
+			var py = (height-arr[i]['tbp'])*ey;
+			points.push({"x":px,"y":py});
+			k++;
+		} 
+		writeline(points,'#000000');
+	}
+	//-------------------------------end------------------------------------tbp
+	//kdj
+	if(vars['kdj']==true){
+		//k
+		var points = [];
+		var k=0;
+		for( var i=startid; i < endid; i++){ 
+			var px = ex * k + ex/2; 
+			var py = (canvas.offsetHeight*23/24-arr[i]['kdj_k']*0.75)*1;
+			points.push({"x":px,"y":py});
+			k++;
+		} 
+		writeline(points,'#333333');
+		//d
+		var points = [];
+		var k=0;
+		for( var i=startid; i < endid; i++){ 
+			var px = ex * k + ex/2; 
+			var py = (canvas.offsetHeight*23/24-arr[i]['kdj_d']*0.75)*1;
+			points.push({"x":px,"y":py});
+			k++;
+		} 
+		writeline(points,'#cccc33');
+		//j
+		var points = [];
+		var k=0;
+		for( var i=startid; i < endid; i++){ 
+			var px = ex * k + ex/2; 
+			var py = (canvas.offsetHeight*23/24-arr[i]['kdj_j']*0.75)*1;
+			points.push({"x":px,"y":py});
+			k++;
+		} 
+		writeline(points,'#9900cc');
+		//kdj坐标
+		for( var i=0; i < 6; i++){
+			ctx.beginPath();
+			ctx.fillStyle = 'black';
+			ctx.textAlign='left';
+			ctx.textBaseline='middle';
+			ctx.fillText(i*20,canvas.offsetWidth-90,canvas.offsetHeight*23/24-i*100/5*0.75);
+			ctx.save();
+			ctx.translate(0.5,0.5);
+			 
+			ctx.moveTo(0, canvas.offsetHeight*23/24-i*100/5*0.75);
+			ctx.lineTo(canvas.offsetWidth-100, canvas.offsetHeight*23/24-i*100/5*0.75);
+			ctx.strokeStyle = "rgba(0,0,0,.1)"; // 设置线的颜色
+			ctx.stroke();
+			ctx.restore();	
+		}
+	}
+	//kdj end
+
+}
+// 绘制曲线
+function writeline(points,color){
+	if(points.length>0){
+		ctx.beginPath();
+		ctx.moveTo(points[0].x, points[0].y);
+		for(var i= 1; i< points.length; i++){ 
+			ctx.lineTo(points[i].x,points[i].y); 
+		} 
+		ctx.lineWidth = 1; 
+		ctx.strokeStyle = color; 
+		ctx.stroke(); 
+	}
+}
+
+//以下是十字坐标
+var canvas2 = document.getElementById("chart2");
+var ctx2 = canvas2.getContext("2d");
+
+//鼠標綁定
+canvas2.addEventListener("mousedown", writexy, false);  
+canvas2.addEventListener('mousemove', writexy, false);  
+canvas2.addEventListener('mouseout',  writeout, false); 
+
+//键盘绑定
+document.onkeydown=function(e){
+	e=window.event||e;
+	if(event.keyCode==37){
+		//左
+		startid--;
+		endid--;
+		if(startid<0){
+			startid=0;
+			endid++;
+		}
+		//alert('左');
+	}
+	if(event.keyCode==38){
+		//上
+		ks--;
+		startid++;       //开始显示的ID
+		if(ks<10){ ks=10;startid--; }
+	}
+	if(event.keyCode==39){
+		//右
+		startid++;
+		endid++
+		if(startid>arr.length-ks){
+			startid--;
+			endid--;
+		}
+		//alert('右');
+	}
+	if(event.keyCode==40){
+		//下
+		ks++;
+		startid--;       //开始显示的ID
+		if(ks>endid){ ks=endid;startid=0; }
+	}
+	//stock(startid);
+	ctx.clearRect(0,0,canvas.offsetWidth,canvas.offsetHeight);//显示区域
+	stock();
+	drawK()
+	return false;
+}
+function checkzb(zb){
+	if(vars[zb]==true){
+		vars[zb]=false;
+	}else{
+		vars[zb]=true;
+	}
+	ctx.clearRect(0,0,canvas.offsetWidth,canvas.offsetHeight);//清空重新绘制
+	stock();
+	drawK()
+	//console.log(vars[zb]);
+}
+
+</script>
+</body>
+</html>
